@@ -1,10 +1,7 @@
 name: Build Custom Android APK
 
 on:
-  workflow_dispatch: # امکان اجرای دستی در هر لحظه
-  push:
-    branches:
-      - '*' # روی همه شاخه‌ها فعال باشد
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,24 +15,60 @@ jobs:
         with:
           node-version: 18
 
+      - name: Enable Corepack
+        run: corepack enable
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-
+      
       - name: Install Dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Make Gradlew Executable
-        run: chmod +x android/gradlew
-
       - name: Build Debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug
+        working-فرهاد عزیز، مشکل دقیقا همان چیزی است که لاگ می‌گوید: پروژه تو از **Corepack** استفاده می‌کند تا نسخه دقیقِ پکیج‌منیجر را مدیریت کند، اما محیطِ GitHub Actions هنوز نسخه قدیمیِ Yarn (1.22.22) را دارد.
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: my-app-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+برای رفع این خطا، کافی است دستور `corepack enable` را قبل از نصب وابستگی‌ها اجرا کنی. این کار باعث می‌شود سیستم، تنظیمات موجود در `package.json` تو را شناسایی کرده و نسخه صحیح را خودش دانلود و استفاده کند.
+
+فایل `simple-apk.yml` خود را با این نسخه جایگزین کن:
+```yaml
+name: Build Custom Android APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+runs-on: ubuntu-latest
+steps:
+- name: Checkout Code
+uses: actions/checkout@v4
+
+- name: Setup Node.js
+uses: actions/setup-node@v4
+with:
+node-version: 18
+
+- name: Enable Corepack
+run: corepack enable
+
+- name: Setup Java
+uses: actions/setup-java@v4
+with:
+distribution: 'temurin'
+java-version: '17'
+
+- name: Install Dependencies
+run: yarn install --frozen-lockfile
+
+- name: Build Debug APK
+working-directory: android
+run: ./gradlew assembleDebug
+
+- name: Upload APK
+uses: actions/upload-artifact@v4
+with:
+name: my-app-debug
+path: android/app/build/outputs/apk/debug/app-debug.apk
