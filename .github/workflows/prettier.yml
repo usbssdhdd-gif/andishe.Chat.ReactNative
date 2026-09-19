@@ -1,4 +1,4 @@
-name: Build Custom Android APK
+name: Build Signed Release APK
 
 on:
   workflow_dispatch:
@@ -6,14 +6,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.3.1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: '20'
+          cache: 'yarn'
 
       - name: Enable Corepack
         run: corepack enable
@@ -23,52 +26,52 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Install Dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Build Debug APK
-        working-فرهاد عزیز، مشکل دقیقا همان چیزی است که لاگ می‌گوید: پروژه تو از **Corepack** استفاده می‌کند تا نسخه دقیقِ پکیج‌منیجر را مدیریت کند، اما محیطِ GitHub Actions هنوز نسخه قدیمیِ Yarn (1.22.22) را دارد.
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
 
-برای رفع این خطا، کافی است دستور `corepack enable` را قبل از نصب وابستگی‌ها اجرا کنی. این کار باعث می‌شود سیستم، تنظیمات موجود در `package.json` تو را شناسایی کرده و نسخه صحیح را خودش دانلود و استفاده کند.
+      - name: Create gradle.properties
+        run: |
+          cat >> android/gradle.properties << EOF
+          KEYSTORE_FILE=release.keystore
+          KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS=${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
+          org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          hermesEnabled=true
+          newArchEnabled=false
+          EOF
 
-فایل `simple-apk.yml` خود را با این نسخه جایگزین کن:
-```yaml
-name: Build Custom Android APK
+      - name: Make Gradlew Executable
+        run: chmod +x android/gradlew
 
-on:
-  workflow_dispatch:
+      - name: Build Release APK
+        working-directory: android
+        run: |
+          ./gradlew assembleRelease \
+            --build-cache \
+            --parallel \
+            --max-workers=4 \
+            --stacktrace
 
-jobs:
-  build:
-runs-on: ubuntu-latest
-steps:
-- name: Checkout Code
-uses: actions/checkout@v4
+      - name: Verify APK Signed
+        run: |
+          APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "APK found at: $APK_PATH"
+          $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | tail -1)/apksigner verify --verbose "$APK_PATH"
 
-- name: Setup Node.js
-uses: actions/setup-node@v4
-with:
-node-version: 18
-
-- name: Enable Corepack
-run: corepack enable
-
-- name: Setup Java
-uses: actions/setup-java@v4
-with:
-distribution: 'temurin'
-java-version: '17'
-
-- name: Install Dependencies
-run: yarn install --frozen-lockfile
-
-- name: Build Debug APK
-working-directory: android
-run: ./gradlew assembleDebug
-
-- name: Upload APK
-uses: actions/upload-artifact@v4
-with:
-name: my-app-debug
-path: android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload Signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocket-chat-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 7
